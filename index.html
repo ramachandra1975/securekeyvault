@@ -4,966 +4,747 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cultural Musings — Secure Key Manager</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;900&family=JetBrains+Mono:wght@400;500&family=Lora:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
 <style>
-:root {
-  --bg:       #070610;
-  --surface:  rgba(255,255,255,0.035);
-  --surface2: rgba(255,255,255,0.06);
-  --border:   rgba(255,255,255,0.09);
-  --border2:  rgba(255,255,255,0.18);
-  --gold:     #c9a84c;
-  --gold-lt:  #e8cc7a;
-  --gold-dim: rgba(201,168,76,0.15);
-  --text:     #ede8dc;
-  --muted:    #7a7090;
-  --dim:      #3a3555;
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Cinzel:wght@400;600&family=Segoe+UI:wght@400;500&display=swap');
 
-  /* provider accent colours */
-  --groq:       #f97316;
-  --gemini:     #4285f4;
-  --together:   #a855f7;
-  --openrouter: #10b981;
-  --hf:         #ffd700;
-  --cerebras:   #ef4444;
-  --cohere:     #6366f1;
-  --mistral:    #fb923c;
-}
+  :root {
+    --bg:      #060810;
+    --panel:   #0d1117;
+    --card:    #111827;
+    --border:  #1f2937;
+    --gold:    #f0a500;
+    --gold2:   #ffd166;
+    --green:   #10b981;
+    --red:     #ef4444;
+    --blue:    #3b82f6;
+    --text:    #e2e8f0;
+    --muted:   #64748b;
+    --mono:    'JetBrains Mono', monospace;
+    --serif:   'Cinzel', serif;
+    --sans:    'Segoe UI', system-ui, sans-serif;
+  }
 
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-body {
-  font-family: 'Lora', Georgia, serif;
-  background: var(--bg);
-  color: var(--text);
-  min-height: 100vh;
-  overflow-x: hidden;
-}
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 13px;
+    min-height: 100vh;
+    background-image:
+      radial-gradient(ellipse 70% 40% at 50% 0%, rgba(240,165,0,0.07) 0%, transparent 65%),
+      repeating-linear-gradient(0deg, transparent, transparent 50px, rgba(255,255,255,0.008) 50px, rgba(255,255,255,0.008) 51px),
+      repeating-linear-gradient(90deg, transparent, transparent 50px, rgba(255,255,255,0.008) 50px, rgba(255,255,255,0.008) 51px);
+  }
 
-/* ── noise + glow bg ── */
-body::before {
-  content: '';
-  position: fixed; inset: 0; z-index: 0; pointer-events: none;
-  background:
-    radial-gradient(ellipse 70% 50% at 15% 10%, rgba(201,168,76,0.07) 0%, transparent 60%),
-    radial-gradient(ellipse 50% 40% at 85% 90%, rgba(99,102,241,0.06) 0%, transparent 55%),
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
-}
+  /* ── NAV ── */
+  nav {
+    background: #08080f;
+    border-bottom: 1px solid var(--border);
+    padding: 0 2rem;
+    height: 54px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .nav-brand {
+    font-family: var(--serif);
+    font-size: 13px;
+    color: var(--gold);
+    letter-spacing: 0.1em;
+    text-decoration: none;
+  }
+  .nav-sep { flex: 1; }
+  .nav-badge {
+    font-size: 10px;
+    padding: 3px 10px;
+    border: 1px solid var(--green);
+    border-radius: 20px;
+    color: var(--green);
+    letter-spacing: 0.08em;
+  }
 
-/* ── header ── */
-header {
-  position: relative; z-index: 10;
-  border-bottom: 1px solid var(--border);
-  padding: 1.2rem 2.5rem;
-  display: flex; align-items: center; gap: 1.5rem;
-  background: rgba(7,6,16,0.85);
-  backdrop-filter: blur(14px);
-}
-.header-logo {
-  font-family: 'Cinzel', serif;
-  font-size: 1rem; font-weight: 600;
-  color: var(--gold-lt);
-  letter-spacing: 0.04em;
-}
-.header-logo span { color: var(--muted); font-weight: 400; font-size: 0.75rem; margin-left: 8px; letter-spacing: 0.08em; }
-.header-right { margin-left: auto; display: flex; align-items: center; gap: 14px; }
-.overall-status {
-  display: flex; align-items: center; gap: 7px;
-  font-family: 'JetBrains Mono', monospace; font-size: 11px;
-  color: var(--muted);
-}
-.overall-dot {
-  width: 8px; height: 8px; border-radius: 50%;
-  background: var(--dim); transition: background 0.4s;
-  flex-shrink: 0;
-}
-.overall-dot.partial { background: #fbbf24; box-shadow: 0 0 8px rgba(251,191,36,0.5); }
-.overall-dot.full    { background: #4ade80; box-shadow: 0 0 8px rgba(74,222,128,0.5); animation: pulse 2s infinite; }
-@keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.5} }
+  /* ── LAYOUT ── */
+  .page { max-width: 860px; margin: 0 auto; padding: 2.5rem 1.2rem 4rem; }
 
-.email-badge {
-  font-family: 'JetBrains Mono', monospace; font-size: 10px;
-  padding: 3px 10px; border-radius: 4px;
-  border: 1px solid rgba(201,168,76,0.35);
-  background: var(--gold-dim); color: var(--gold-lt);
-  letter-spacing: 0.05em;
-}
+  /* ── HERO ── */
+  .hero { text-align: center; margin-bottom: 2.5rem; }
+  .hero-icon { font-size: 2.6rem; display: block; margin-bottom: 0.6rem; animation: glow 3s ease-in-out infinite; }
+  @keyframes glow { 0%,100%{filter:drop-shadow(0 0 6px rgba(240,165,0,0.3))} 50%{filter:drop-shadow(0 0 16px rgba(240,165,0,0.7))} }
 
-/* ── main layout ── */
-main {
-  position: relative; z-index: 1;
-  max-width: 1100px; margin: 0 auto;
-  padding: 2.5rem 2rem 4rem;
-}
+  .hero h1 {
+    font-family: var(--serif);
+    font-size: clamp(1.6rem, 4vw, 2.4rem);
+    font-weight: 400;
+    color: var(--gold);
+    letter-spacing: 0.08em;
+    margin-bottom: 0.5rem;
+  }
+  .hero h1 em { font-style: italic; color: var(--gold2); }
+  .hero p { font-size: 13px; color: var(--muted); line-height: 1.8; max-width: 540px; margin: 0 auto 1rem; }
 
-/* ── hero block ── */
-.hero {
-  text-align: center;
-  padding: 2rem 0 2.8rem;
-  margin-bottom: 2.5rem;
-  border-bottom: 1px solid var(--border);
-}
-.hero-eyebrow {
-  font-family: 'JetBrains Mono', monospace; font-size: 10px;
-  letter-spacing: 0.18em; text-transform: uppercase;
-  color: var(--gold); margin-bottom: 1rem; display: block;
-}
-.hero-title {
-  font-family: 'Cinzel', serif;
-  font-size: clamp(1.8rem, 4vw, 2.8rem);
-  font-weight: 900; color: var(--text);
-  line-height: 1.1; margin-bottom: 0.9rem;
-}
-.hero-title em { color: var(--gold-lt); font-style: italic; font-weight: 400; }
-.hero-sub {
-  font-size: 0.9rem; color: var(--muted);
-  max-width: 560px; margin: 0 auto; line-height: 1.7;
-}
+  .security-note {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 16px;
+    background: rgba(16,185,129,0.08);
+    border: 1px solid rgba(16,185,129,0.3);
+    border-radius: 20px;
+    font-size: 11px;
+    color: var(--green);
+    letter-spacing: 0.06em;
+  }
 
-/* ── progress strip ── */
-.progress-strip {
-  display: flex; align-items: center; gap: 10px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 0.9rem 1.3rem;
-  margin-bottom: 2rem;
-}
-.progress-strip-label {
-  font-family: 'JetBrains Mono', monospace; font-size: 10px;
-  letter-spacing: 0.1em; text-transform: uppercase;
-  color: var(--muted); white-space: nowrap;
-}
-.progress-track {
-  flex: 1; height: 4px;
-  background: rgba(255,255,255,0.07);
-  border-radius: 2px; overflow: hidden;
-}
-.progress-fill {
-  height: 100%; width: 0%;
-  background: linear-gradient(90deg, var(--gold), #4ade80);
-  border-radius: 2px;
-  transition: width 0.5s ease;
-}
-.progress-count {
-  font-family: 'JetBrains Mono', monospace; font-size: 12px;
-  color: var(--gold-lt); white-space: nowrap;
-}
+  /* ── PROGRESS ── */
+  .prog-block { margin-bottom: 2rem; }
+  .prog-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.06em;
+  }
+  .prog-count { color: var(--gold); font-weight: 600; }
+  .prog-wrap { background: var(--panel); border-radius: 20px; height: 6px; overflow: hidden; }
+  .prog-bar {
+    height: 100%;
+    background: linear-gradient(90deg, var(--green), var(--gold));
+    border-radius: 20px;
+    transition: width 0.5s cubic-bezier(.4,0,.2,1);
+    width: 0%;
+  }
 
-/* ── grid of provider cards ── */
-.providers-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(480px, 1fr));
-  gap: 14px;
-}
+  /* ── PROVIDER GRID ── */
+  .providers { display: flex; flex-direction: column; gap: 10px; margin-bottom: 2rem; }
 
-/* ── individual provider card ── */
-.pcard {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 1.25rem 1.4rem;
-  transition: border-color 0.25s;
-  position: relative;
-  overflow: hidden;
-}
-.pcard::before {
-  content: '';
-  position: absolute; top: 0; left: 0;
-  width: 3px; height: 100%;
-  background: var(--accent, var(--gold));
-  opacity: 0.5;
-  transition: opacity 0.3s;
-}
-.pcard.secured::before { opacity: 1; }
-.pcard.secured { border-color: rgba(74,222,128,0.2); }
-.pcard:hover { border-color: var(--border2); }
+  .pcard {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    transition: border-color 0.3s, box-shadow 0.3s;
+  }
+  .pcard.secured {
+    border-color: var(--green);
+    box-shadow: 0 0 0 1px rgba(16,185,129,0.15);
+  }
 
-.pcard-header {
-  display: flex; align-items: center; gap: 12px;
-  margin-bottom: 1rem;
-}
-.pcard-icon {
-  width: 38px; height: 38px; border-radius: 8px;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 1.2rem; flex-shrink: 0;
-  background: rgba(255,255,255,0.05);
-  border: 1px solid var(--border);
-}
-.pcard-meta { flex: 1; }
-.pcard-name {
-  font-family: 'Cinzel', serif; font-size: 0.88rem;
-  font-weight: 600; color: var(--text);
-  margin-bottom: 2px;
-}
-.pcard-url {
-  font-family: 'JetBrains Mono', monospace; font-size: 10px;
-  color: var(--muted); letter-spacing: 0.04em;
-}
-.pcard-limit {
-  font-family: 'JetBrains Mono', monospace; font-size: 10px;
-  padding: 3px 9px; border-radius: 4px;
-  border: 1px solid var(--border);
-  color: var(--muted); background: rgba(0,0,0,0.2);
-  white-space: nowrap;
-}
-.pcard-limit.free {
-  border-color: rgba(74,222,128,0.3);
-  color: #4ade80; background: rgba(10,30,20,0.4);
-}
+  .pcard-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    user-select: none;
+  }
+  .pcard.secured .pcard-head { background: rgba(16,185,129,0.05); }
 
-/* ── key input row ── */
-.key-row {
-  display: flex; gap: 8px; align-items: center;
-}
-.key-wrap { position: relative; flex: 1; }
-.key-input {
-  width: 100%;
-  background: rgba(0,0,0,0.35);
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  padding: 9px 50px 9px 12px;
-  font-family: 'JetBrains Mono', monospace; font-size: 12px;
-  color: var(--text); outline: none;
-  transition: border-color 0.2s, background 0.2s;
-  -webkit-user-select: text; user-select: text;
-}
-.key-input::placeholder { color: var(--dim); }
-.key-input:focus { border-color: rgba(201,168,76,0.5); }
-.key-input.locked {
-  color: transparent !important;
-  text-shadow: 0 0 10px rgba(74,222,128,0.7) !important;
-  border-color: rgba(74,222,128,0.4) !important;
-  background: rgba(10,30,20,0.5) !important;
-  cursor: not-allowed;
-  pointer-events: none;
-  -webkit-user-select: none !important;
-  user-select: none !important;
-}
-.key-status-pill {
-  position: absolute; right: 7px; top: 50%;
-  transform: translateY(-50%);
-  font-family: 'JetBrains Mono', monospace; font-size: 9px;
-  padding: 2px 7px; border-radius: 4px;
-  border: 1px solid var(--border); color: var(--muted);
-  background: rgba(0,0,0,0.3); letter-spacing: 0.04em;
-  transition: all 0.3s; white-space: nowrap;
-}
-.key-status-pill.ok {
-  border-color: rgba(74,222,128,0.5);
-  color: #4ade80; background: rgba(10,30,20,0.6);
-}
-.key-status-pill.sending {
-  border-color: rgba(251,191,36,0.5);
-  color: #fbbf24; background: rgba(30,20,10,0.6);
-}
+  .p-icon { font-size: 1.15rem; flex-shrink: 0; }
+  .p-name { font-family: var(--serif); font-size: 0.82rem; color: var(--gold); flex: 1; letter-spacing: 0.06em; }
+  .p-meta { font-size: 10px; color: var(--muted); text-align: right; line-height: 1.5; }
 
-.key-btn {
-  padding: 9px 16px; border-radius: 7px; flex-shrink: 0;
-  border: 1px solid var(--border);
-  background: var(--surface2); color: var(--muted);
-  font-family: 'JetBrains Mono', monospace; font-size: 11px;
-  cursor: pointer; transition: all 0.2s; letter-spacing: 0.05em;
-  white-space: nowrap;
-}
-.key-btn:hover:not(:disabled) {
-  border-color: var(--gold); color: var(--gold-lt);
-  background: var(--gold-dim);
-}
-.key-btn.locked-btn {
-  border-color: rgba(74,222,128,0.35);
-  color: #4ade80; background: rgba(10,30,20,0.5);
-  cursor: default;
-}
+  .p-badge {
+    padding: 2px 10px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    font-size: 10px;
+    color: var(--muted);
+    white-space: nowrap;
+    transition: all 0.3s;
+    flex-shrink: 0;
+  }
+  .p-badge.ok { border-color: var(--green); color: var(--green); background: rgba(16,185,129,0.1); }
+  .p-badge.optional { border-color: #374151; color: #6b7280; }
 
-/* ── status bar below input ── */
-.key-statusbar {
-  display: flex; align-items: center; gap: 7px;
-  margin-top: 8px;
-  font-family: 'JetBrains Mono', monospace; font-size: 10px;
-  color: var(--muted); min-height: 18px;
-}
-.ksdot {
-  width: 6px; height: 6px; border-radius: 50%;
-  background: var(--dim); flex-shrink: 0; transition: background 0.3s;
-}
-.ksdot.amber { background: #fbbf24; }
-.ksdot.green { background: #4ade80; box-shadow: 0 0 5px rgba(74,222,128,0.6); animation: pulse 2s infinite; }
-.ksdot.red   { background: #f87171; }
+  .pcard-body { padding: 12px 16px; }
 
-/* ── note below a card ── */
-.card-note {
-  margin-top: 8px;
-  font-size: 0.75rem; color: var(--muted);
-  padding: 6px 10px;
-  background: rgba(0,0,0,0.15);
-  border-radius: 5px; border-left: 2px solid var(--dim);
-  line-height: 1.5;
-}
-.card-note strong { color: var(--text); }
+  .key-row { display: flex; gap: 8px; align-items: stretch; }
 
-/* ── email log ── */
-.log-section {
-  margin-top: 2rem;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  overflow: hidden;
-}
-.log-header {
-  padding: 0.85rem 1.3rem;
-  border-bottom: 1px solid var(--border);
-  font-family: 'JetBrains Mono', monospace; font-size: 10px;
-  letter-spacing: 0.1em; text-transform: uppercase;
-  color: var(--muted);
-  display: flex; align-items: center; gap: 8px;
-}
-.log-body {
-  padding: 0.8rem 1.3rem;
-  font-family: 'JetBrains Mono', monospace; font-size: 11px;
-  color: var(--muted); line-height: 2.2;
-  max-height: 200px; overflow-y: auto;
-}
-.log-entry { display: flex; gap: 10px; }
-.log-time  { color: var(--dim); min-width: 48px; }
-.log-ok    { color: #4ade80; }
-.log-warn  { color: #fbbf24; }
-.log-err   { color: #f87171; }
-.log-info  { color: #7dd8f8; }
+  .key-wrap { flex: 1; position: relative; }
 
-/* ── send all button ── */
-.actions-row {
-  display: flex; gap: 10px; align-items: center;
-  margin-top: 1.5rem; flex-wrap: wrap;
-}
-.send-all-btn {
-  padding: 12px 24px; border-radius: 8px;
-  border: 1px solid rgba(201,168,76,0.4);
-  background: var(--gold-dim);
-  color: var(--gold-lt);
-  font-family: 'Cinzel', serif; font-size: 13px;
-  letter-spacing: 0.06em; cursor: pointer;
-  transition: opacity 0.2s, transform 0.15s;
-}
-.send-all-btn:hover:not(:disabled) { opacity: 0.85; transform: translateY(-1px); }
-.send-all-btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
+  .key-input {
+    width: 100%;
+    height: 38px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 0 40px 0 12px;
+    outline: none;
+    transition: border-color 0.2s, filter 0.3s;
+    letter-spacing: 0.03em;
+  }
+  .key-input:focus { border-color: var(--gold); }
+  .key-input.blurred {
+    filter: blur(5px);
+    pointer-events: none;
+    color: transparent;
+    text-shadow: 0 0 8px rgba(240,165,0,0.5);
+  }
 
-.clear-btn {
-  padding: 12px 20px; border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--muted);
-  font-family: 'JetBrains Mono', monospace; font-size: 11px;
-  letter-spacing: 0.05em; cursor: pointer;
-  transition: opacity 0.2s;
-}
-.clear-btn:hover { opacity: 0.8; color: #f87171; border-color: rgba(248,113,113,0.4); }
+  .eye-btn {
+    position: absolute;
+    right: 8px; top: 50%;
+    transform: translateY(-50%);
+    background: none; border: none;
+    cursor: pointer;
+    color: var(--muted);
+    font-size: 14px;
+    padding: 4px;
+    transition: color 0.2s;
+    line-height: 1;
+  }
+  .eye-btn:hover { color: var(--gold); }
 
-.actions-note {
-  font-family: 'JetBrains Mono', monospace; font-size: 10px;
-  color: var(--dim); margin-left: auto;
-  letter-spacing: 0.04em;
-}
+  .secure-btn {
+    height: 38px;
+    padding: 0 18px;
+    background: var(--gold);
+    color: #000;
+    border: none;
+    border-radius: 6px;
+    font-family: var(--sans);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.2s, opacity 0.2s;
+    letter-spacing: 0.03em;
+  }
+  .secure-btn:hover { background: var(--gold2); }
+  .secure-btn.done { background: var(--green); color: #fff; cursor: default; }
+  .secure-btn.done:hover { background: var(--green); }
 
-/* ── setup banner ── */
-.setup-banner {
-  margin-top: 2rem;
-  background: rgba(201,168,76,0.05);
-  border: 1px solid rgba(201,168,76,0.2);
-  border-radius: 12px;
-  padding: 1.3rem 1.6rem;
-}
-.setup-banner h3 {
-  font-family: 'Cinzel', serif; font-size: 0.9rem;
-  color: var(--gold-lt); margin-bottom: 0.8rem;
-  letter-spacing: 0.04em;
-}
-.setup-steps {
-  list-style: none; display: flex; flex-direction: column; gap: 7px;
-}
-.setup-steps li {
-  display: flex; gap: 10px; align-items: flex-start;
-  font-size: 0.82rem; color: var(--muted); line-height: 1.5;
-}
-.setup-steps li::before {
-  content: attr(data-n);
-  font-family: 'Cinzel', serif; font-size: 0.7rem;
-  color: var(--gold); background: var(--gold-dim);
-  border: 1px solid rgba(201,168,76,0.3);
-  border-radius: 50%; width: 20px; height: 20px;
-  display: flex; align-items: center; justify-content: center;
-  flex-shrink: 0; margin-top: 1px;
-}
-.setup-steps code {
-  font-family: 'JetBrains Mono', monospace; font-size: 11px;
-  background: rgba(0,0,0,0.3); padding: 1px 6px; border-radius: 3px;
-  color: #7dd8f8;
-}
-.setup-steps a { color: var(--gold); }
+  .key-hint {
+    margin-top: 5px;
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 0.04em;
+  }
 
-/* ── scrollbar ── */
-::-webkit-scrollbar { width: 4px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+  /* ── OUTPUT PANEL ── */
+  .out-panel {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 1.5rem;
+  }
 
-@media (max-width: 760px) {
-  .providers-grid { grid-template-columns: 1fr; }
-  header { padding: 0.9rem 1rem; flex-wrap: wrap; gap: 8px; }
-  main { padding: 1.5rem 1rem 3rem; }
-  .hero-title { font-size: 1.6rem; }
-  .actions-note { display: none; }
-}
+  .out-head {
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .out-title {
+    font-family: var(--serif);
+    font-size: 0.82rem;
+    color: var(--gold);
+    letter-spacing: 0.08em;
+  }
+
+  .tab-row { display: flex; gap: 5px; }
+  .tab-btn {
+    padding: 4px 12px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: none;
+    color: var(--muted);
+    font-size: 11px;
+    cursor: pointer;
+    font-family: var(--sans);
+    transition: all 0.2s;
+  }
+  .tab-btn.active { background: var(--gold); color: #000; border-color: var(--gold); font-weight: 600; }
+  .tab-btn:hover:not(.active) { color: var(--text); border-color: var(--muted); }
+
+  .out-body { padding: 14px 16px; }
+
+  .out-box {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    line-height: 2;
+    color: #94a3b8;
+    white-space: pre;
+    overflow-x: auto;
+    min-height: 70px;
+  }
+
+  .out-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+
+  .copy-btn {
+    padding: 7px 18px;
+    background: transparent;
+    border: 1px solid var(--gold);
+    border-radius: 6px;
+    color: var(--gold);
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.2s;
+    letter-spacing: 0.04em;
+    font-family: var(--sans);
+  }
+  .copy-btn:hover { background: rgba(240,165,0,0.1); }
+  .copy-btn.copied { border-color: var(--green); color: var(--green); }
+
+  .download-btn {
+    padding: 7px 18px;
+    background: rgba(59,130,246,0.1);
+    border: 1px solid var(--blue);
+    border-radius: 6px;
+    color: #93c5fd;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.2s;
+    letter-spacing: 0.04em;
+    font-family: var(--sans);
+  }
+  .download-btn:hover { background: rgba(59,130,246,0.2); }
+
+  /* ── VERCEL STEPS ── */
+  .steps-panel {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.4rem 1.6rem;
+    margin-bottom: 1.5rem;
+  }
+  .steps-title {
+    font-family: var(--serif);
+    color: var(--gold);
+    font-size: 0.85rem;
+    letter-spacing: 0.08em;
+    margin-bottom: 1.2rem;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .step-item { display: flex; gap: 12px; margin-bottom: 12px; }
+  .step-num {
+    width: 24px; height: 24px; border-radius: 50%;
+    background: rgba(240,165,0,0.1);
+    border: 1px solid rgba(240,165,0,0.4);
+    color: var(--gold);
+    font-size: 11px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; margin-top: 1px;
+    font-family: var(--mono);
+  }
+  .step-text { font-size: 12px; color: var(--text); line-height: 1.8; }
+  .step-text code {
+    background: var(--panel);
+    padding: 1px 7px;
+    border-radius: 3px;
+    color: var(--gold2);
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+  .step-text a { color: var(--gold); text-decoration: none; }
+  .step-text a:hover { text-decoration: underline; }
+
+  /* ── ACTIVITY LOG ── */
+  .log-panel {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 1.5rem;
+  }
+  .log-head {
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    padding: 8px 16px;
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  .log-body {
+    padding: 10px 16px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    max-height: 140px;
+    overflow-y: auto;
+    line-height: 2;
+  }
+  .log-line { display: flex; gap: 10px; }
+  .log-line .lt { color: #374151; flex-shrink: 0; }
+  .log-line.ok .lm { color: var(--green); }
+  .log-line.warn .lm { color: #f59e0b; }
+  .log-line.info .lm { color: var(--blue); }
+
+  /* ── RESET ── */
+  .reset-btn {
+    width: 100%;
+    padding: 9px;
+    background: transparent;
+    border: 1px solid #374151;
+    border-radius: 6px;
+    color: #6b7280;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: var(--sans);
+    margin-bottom: 2rem;
+  }
+  .reset-btn:hover { border-color: var(--red); color: var(--red); }
+
+  /* ── FOOTER ── */
+  footer {
+    text-align: center;
+    font-size: 11px;
+    color: var(--muted);
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border);
+    line-height: 2;
+  }
+  footer a { color: var(--gold); text-decoration: none; }
+
+  @media (max-width: 500px) {
+    .key-row { flex-direction: column; }
+    .secure-btn { width: 100%; height: 36px; }
+  }
 </style>
 </head>
 <body>
 
-<header>
-  <div class="header-logo">
-    Cultural Musings
-    <span>· Secure Key Manager</span>
-  </div>
-  <div class="header-right">
-    <div class="overall-status">
-      <span class="overall-dot" id="overall-dot"></span>
-      <span id="overall-msg">0 / 8 secured</span>
-    </div>
-    <div class="email-badge">→ smith123846@gmail.com</div>
-  </div>
-</header>
+<!-- NAV -->
+<nav>
+  <a href="https://www.culturalmusings.com" class="nav-brand">CULTURAL MUSINGS</a>
+  <div class="nav-sep"></div>
+  <span class="nav-badge">🔒 LOCAL ONLY — NO TRANSMISSION</span>
+</nav>
 
-<main>
+<div class="page">
 
+  <!-- HERO -->
   <div class="hero">
-    <span class="hero-eyebrow">All 8 Free AI Providers · Cultural Musings</span>
-    <h1 class="hero-title">Secure Key <em>Vault</em></h1>
-    <p class="hero-sub">Paste each API key once. Keys are masked immediately, stored only in browser memory, and the full key is emailed to your address. Nothing is saved to disk or localStorage.</p>
+    <span class="hero-icon">🔐</span>
+    <h1>Secure Key <em>Vault</em></h1>
+    <p>
+      Paste each API key once — it blurs instantly and stays only in your browser memory.
+      Nothing is sent to any server, email, or third party.
+    </p>
+    <span class="security-note">✓ Zero transmission · Zero storage · Close tab to clear all</span>
   </div>
 
-  <!-- Progress -->
-  <div class="progress-strip">
-    <span class="progress-strip-label">Setup Progress</span>
-    <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
-    <span class="progress-count" id="progress-count">0 / 8 keys</span>
+  <!-- PROGRESS -->
+  <div class="prog-block">
+    <div class="prog-top">
+      <span>Setup Progress</span>
+      <span class="prog-count" id="progLabel">0 / 8 secured</span>
+    </div>
+    <div class="prog-wrap">
+      <div class="prog-bar" id="progBar"></div>
+    </div>
   </div>
 
-  <!-- ═══ 8 PROVIDER CARDS ═══ -->
-  <div class="providers-grid">
+  <!-- PROVIDERS -->
+  <div class="providers" id="providers"></div>
 
-    <!-- 1. Groq -->
-    <div class="pcard" id="card-groq" style="--accent:#f97316;">
-      <div class="pcard-header">
-        <div class="pcard-icon">⚡</div>
-        <div class="pcard-meta">
-          <div class="pcard-name">Groq</div>
-          <div class="pcard-url">console.groq.com</div>
-        </div>
-        <span class="pcard-limit free">14,400 req/day</span>
+  <!-- OUTPUT -->
+  <div class="out-panel">
+    <div class="out-head">
+      <span class="out-title">⚙ Generate Vercel Output</span>
+      <div class="tab-row">
+        <button class="tab-btn active" onclick="switchTab('vercel',this)">Vercel Env Vars</button>
+        <button class="tab-btn" onclick="switchTab('env',this)">.env File</button>
+        <button class="tab-btn" onclick="switchTab('js',this)">server.js</button>
       </div>
-      <div class="key-row">
-        <div class="key-wrap">
-          <input class="key-input" id="inp-groq" type="text"
-            placeholder="Paste gsk_... key here"
-            autocomplete="off" spellcheck="false"
-            onpaste="handlePaste(event,'groq')"
-            onkeydown="if(event.key==='Enter')lockAndSend('groq')">
-          <span class="key-status-pill" id="pill-groq">pending</span>
-        </div>
-        <button class="key-btn" id="btn-groq" onclick="lockAndSend('groq')">Secure →</button>
-      </div>
-      <div class="key-statusbar">
-        <span class="ksdot" id="dot-groq"></span>
-        <span id="msg-groq">Paste your gsk_... key and click Secure</span>
-      </div>
-      <div class="card-note"><strong>Start here.</strong> Highest free limit — powers all modules solo. Model: llama-3.3-70b-versatile.</div>
     </div>
-
-    <!-- 2. Gemini -->
-    <div class="pcard" id="card-gemini" style="--accent:#4285f4;">
-      <div class="pcard-header">
-        <div class="pcard-icon">🔷</div>
-        <div class="pcard-meta">
-          <div class="pcard-name">Google Gemini</div>
-          <div class="pcard-url">aistudio.google.com</div>
-        </div>
-        <span class="pcard-limit free">1,500 req/day</span>
-      </div>
-      <div class="key-row">
-        <div class="key-wrap">
-          <input class="key-input" id="inp-gemini" type="text"
-            placeholder="Paste AIzaSy... key here"
-            autocomplete="off" spellcheck="false"
-            onpaste="handlePaste(event,'gemini')"
-            onkeydown="if(event.key==='Enter')lockAndSend('gemini')">
-          <span class="key-status-pill" id="pill-gemini">pending</span>
-        </div>
-        <button class="key-btn" id="btn-gemini" onclick="lockAndSend('gemini')">Secure →</button>
-      </div>
-      <div class="key-statusbar">
-        <span class="ksdot" id="dot-gemini"></span>
-        <span id="msg-gemini">Paste your AIzaSy... key and click Secure</span>
-      </div>
-      <div class="card-note">Primary backup to Groq. Google AI Studio → Get API Key → no credit card needed.</div>
-    </div>
-
-    <!-- 3. Together AI -->
-    <div class="pcard" id="card-together" style="--accent:#a855f7;">
-      <div class="pcard-header">
-        <div class="pcard-icon">🤝</div>
-        <div class="pcard-meta">
-          <div class="pcard-name">Together AI</div>
-          <div class="pcard-url">api.together.ai</div>
-        </div>
-        <span class="pcard-limit free">~1,000 req/day</span>
-      </div>
-      <div class="key-row">
-        <div class="key-wrap">
-          <input class="key-input" id="inp-together" type="text"
-            placeholder="Paste Together AI key here"
-            autocomplete="off" spellcheck="false"
-            onpaste="handlePaste(event,'together')"
-            onkeydown="if(event.key==='Enter')lockAndSend('together')">
-          <span class="key-status-pill" id="pill-together">pending</span>
-        </div>
-        <button class="key-btn" id="btn-together" onclick="lockAndSend('together')">Secure →</button>
-      </div>
-      <div class="key-statusbar">
-        <span class="ksdot" id="dot-together"></span>
-        <span id="msg-together">Not yet configured — sign up at api.together.ai</span>
-      </div>
-      <div class="card-note">Llama-3.3-70B-Instruct-Turbo-Free · no credit card · Settings → API Keys.</div>
-    </div>
-
-    <!-- 4. OpenRouter -->
-    <div class="pcard" id="card-openrouter" style="--accent:#10b981;">
-      <div class="pcard-header">
-        <div class="pcard-icon">🛣️</div>
-        <div class="pcard-meta">
-          <div class="pcard-name">OpenRouter</div>
-          <div class="pcard-url">openrouter.ai</div>
-        </div>
-        <span class="pcard-limit free">~200 req/day</span>
-      </div>
-      <div class="key-row">
-        <div class="key-wrap">
-          <input class="key-input" id="inp-openrouter" type="text"
-            placeholder="Paste sk-or-v1-... key here"
-            autocomplete="off" spellcheck="false"
-            onpaste="handlePaste(event,'openrouter')"
-            onkeydown="if(event.key==='Enter')lockAndSend('openrouter')">
-          <span class="key-status-pill" id="pill-openrouter">pending</span>
-        </div>
-        <button class="key-btn" id="btn-openrouter" onclick="lockAndSend('openrouter')">Secure →</button>
-      </div>
-      <div class="key-statusbar">
-        <span class="ksdot" id="dot-openrouter"></span>
-        <span id="msg-openrouter">Paste your sk-or-v1-... key and click Secure</span>
-      </div>
-      <div class="card-note">Set credit limit to $0 when creating key — uses free models only, no accidental charges.</div>
-    </div>
-
-    <!-- 5. HuggingFace -->
-    <div class="pcard" id="card-hf" style="--accent:#ffd700;">
-      <div class="pcard-header">
-        <div class="pcard-icon">🤗</div>
-        <div class="pcard-meta">
-          <div class="pcard-name">HuggingFace</div>
-          <div class="pcard-url">huggingface.co</div>
-        </div>
-        <span class="pcard-limit free">~500 req/day</span>
-      </div>
-      <div class="key-row">
-        <div class="key-wrap">
-          <input class="key-input" id="inp-hf" type="text"
-            placeholder="Paste hf_... token here"
-            autocomplete="off" spellcheck="false"
-            onpaste="handlePaste(event,'hf')"
-            onkeydown="if(event.key==='Enter')lockAndSend('hf')">
-          <span class="key-status-pill" id="pill-hf">pending</span>
-        </div>
-        <button class="key-btn" id="btn-hf" onclick="lockAndSend('hf')">Secure →</button>
-      </div>
-      <div class="key-statusbar">
-        <span class="ksdot" id="dot-hf"></span>
-        <span id="msg-hf">Not yet configured — huggingface.co → Settings → Access Tokens</span>
-      </div>
-      <div class="card-note">Also required for FLUX image generation. Create token as type <strong style="color:var(--text);">Read</strong>.</div>
-    </div>
-
-    <!-- 6. Cerebras -->
-    <div class="pcard" id="card-cerebras" style="--accent:#ef4444;">
-      <div class="pcard-header">
-        <div class="pcard-icon">🧠</div>
-        <div class="pcard-meta">
-          <div class="pcard-name">Cerebras</div>
-          <div class="pcard-url">cerebras.ai</div>
-        </div>
-        <span class="pcard-limit free">~1,000 req/day</span>
-      </div>
-      <div class="key-row">
-        <div class="key-wrap">
-          <input class="key-input" id="inp-cerebras" type="text"
-            placeholder="Paste csk_... key here"
-            autocomplete="off" spellcheck="false"
-            onpaste="handlePaste(event,'cerebras')"
-            onkeydown="if(event.key==='Enter')lockAndSend('cerebras')">
-          <span class="key-status-pill" id="pill-cerebras">pending</span>
-        </div>
-        <button class="key-btn" id="btn-cerebras" onclick="lockAndSend('cerebras')">Secure →</button>
-      </div>
-      <div class="key-statusbar">
-        <span class="ksdot" id="dot-cerebras"></span>
-        <span id="msg-cerebras">Paste your csk_... key and click Secure</span>
-      </div>
-      <div class="card-note">You have a backup key available. Paste whichever is primary here; use the log to confirm it was received.</div>
-    </div>
-
-    <!-- 7. Cohere -->
-    <div class="pcard" id="card-cohere" style="--accent:#6366f1;">
-      <div class="pcard-header">
-        <div class="pcard-icon">🌊</div>
-        <div class="pcard-meta">
-          <div class="pcard-name">Cohere</div>
-          <div class="pcard-url">cohere.com</div>
-        </div>
-        <span class="pcard-limit free">1,000 req/month</span>
-      </div>
-      <div class="key-row">
-        <div class="key-wrap">
-          <input class="key-input" id="inp-cohere" type="text"
-            placeholder="Paste Cohere trial key here"
-            autocomplete="off" spellcheck="false"
-            onpaste="handlePaste(event,'cohere')"
-            onkeydown="if(event.key==='Enter')lockAndSend('cohere')">
-          <span class="key-status-pill" id="pill-cohere">pending</span>
-        </div>
-        <button class="key-btn" id="btn-cohere" onclick="lockAndSend('cohere')">Secure →</button>
-      </div>
-      <div class="key-statusbar">
-        <span class="ksdot" id="dot-cohere"></span>
-        <span id="msg-cohere">Paste your Cohere trial key and click Secure</span>
-      </div>
-      <div class="card-note">Trial key auto-generated at signup — already in your dashboard. Monthly limit resets each month.</div>
-    </div>
-
-    <!-- 8. Mistral -->
-    <div class="pcard" id="card-mistral" style="--accent:#fb923c;">
-      <div class="pcard-header">
-        <div class="pcard-icon">🌪️</div>
-        <div class="pcard-meta">
-          <div class="pcard-name">Mistral AI</div>
-          <div class="pcard-url">console.mistral.ai</div>
-        </div>
-        <span class="pcard-limit free">~500 req/day</span>
-      </div>
-      <div class="key-row">
-        <div class="key-wrap">
-          <input class="key-input" id="inp-mistral" type="text"
-            placeholder="Paste Mistral UUID key here"
-            autocomplete="off" spellcheck="false"
-            onpaste="handlePaste(event,'mistral')"
-            onkeydown="if(event.key==='Enter')lockAndSend('mistral')">
-          <span class="key-status-pill" id="pill-mistral">pending</span>
-        </div>
-        <button class="key-btn" id="btn-mistral" onclick="lockAndSend('mistral')">Secure →</button>
-      </div>
-      <div class="key-statusbar">
-        <span class="ksdot" id="dot-mistral"></span>
-        <span id="msg-mistral">Paste your Mistral key and click Secure</span>
-      </div>
-      <div class="card-note">UUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx · copy immediately on creation, shown only once.</div>
-    </div>
-
-  </div><!-- /providers-grid -->
-
-  <!-- Actions row -->
-  <div class="actions-row">
-    <button class="send-all-btn" id="send-all-btn" onclick="sendAllEmail()" disabled>
-      ✦ Email All Secured Keys Now
-    </button>
-    <button class="clear-btn" onclick="clearAll()">Reset All</button>
-    <span class="actions-note" id="actions-note">Secure at least one key to enable</span>
-  </div>
-
-  <!-- Activity / Email log -->
-  <div class="log-section">
-    <div class="log-header">
-      <span style="color:var(--gold);">◈</span>
-      Activity Log — Email Confirmations
-    </div>
-    <div class="log-body" id="act-log">
-      <div class="log-entry">
-        <span class="log-time" id="log-init-time"></span>
-        <span class="log-info">[init] Secure vault ready · 8 providers · target: smith123846@gmail.com</span>
+    <div class="out-body">
+      <div class="out-box" id="outBox">Secure at least one key above to generate output…</div>
+      <div class="out-actions">
+        <button class="copy-btn" id="copyBtn" onclick="copyOut()">⎘ Copy</button>
+        <button class="download-btn" onclick="downloadOut()">⬇ Download</button>
       </div>
     </div>
   </div>
 
-  <!-- Setup banner -->
-  <div class="setup-banner">
-    <h3>One-Time EmailJS Setup</h3>
-    <ul class="setup-steps">
-      <li data-n="1">Sign up free at <a href="https://emailjs.com" target="_blank">emailjs.com</a> — 200 emails/month free. No backend needed.</li>
-      <li data-n="2">Add a <strong style="color:var(--text);">Gmail</strong> service and connect <code>smith123846@gmail.com</code>. Note your <strong style="color:var(--text);">Service ID</strong>.</li>
-      <li data-n="3">Create an email template using variables: <code>{{provider}}</code> <code>{{key_full}}</code> <code>{{timestamp}}</code>. Note your <strong style="color:var(--text);">Template ID</strong>.</li>
-      <li data-n="4">Copy your <strong style="color:var(--text);">Public Key</strong> from Account → API Keys.</li>
-      <li data-n="5">Open this file in a text editor and replace <code>YOUR_PUBLIC_KEY</code>, <code>YOUR_SERVICE_ID</code>, <code>YOUR_TEMPLATE_ID</code> in the script below with your real values. Save and reopen.</li>
-    </ul>
+  <!-- VERCEL STEPS -->
+  <div class="steps-panel">
+    <div class="steps-title">📋 How to add keys to Vercel — 3 steps</div>
+    <div class="step-item">
+      <div class="step-num">1</div>
+      <div class="step-text">
+        Generate the <strong>Vercel Env Vars</strong> output above after securing your keys.
+      </div>
+    </div>
+    <div class="step-item">
+      <div class="step-num">2</div>
+      <div class="step-text">
+        Go to <a href="https://vercel.com" target="_blank">vercel.com</a> → your project →
+        <code>Settings</code> → <code>Environment Variables</code>.
+        Add each <code>NAME</code> and <code>VALUE</code> pair, click <strong>Save</strong>.
+      </div>
+    </div>
+    <div class="step-item">
+      <div class="step-num">3</div>
+      <div class="step-text">
+        Click <code>Redeploy</code> in Vercel. Your site now uses the keys securely —
+        they never appear in any HTML or JS file visible to the public.
+      </div>
+    </div>
   </div>
 
-</main>
+  <!-- ACTIVITY LOG -->
+  <div class="log-panel">
+    <div class="log-head">◈ Activity Log</div>
+    <div class="log-body" id="logBody">
+      <div class="log-line info">
+        <span class="lt">[init]</span>
+        <span class="lm">Secure vault ready · 8 providers · zero transmission mode</span>
+      </div>
+    </div>
+  </div>
 
-<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+  <!-- RESET -->
+  <button class="reset-btn" onclick="resetAll()">↺ Reset All — Clear from memory</button>
+
+  <!-- FOOTER -->
+  <footer>
+    <a href="https://www.culturalmusings.com">culturalmusings.com</a> · Secure Key Vault<br>
+    Keys stored in browser memory only · No EmailJS · No server · No transmission<br>
+    Close this tab to wipe all keys from memory
+  </footer>
+
+</div>
+
 <script>
-/* ═══════════════════════════════════════════
-   CONFIGURATION — fill these 3 values in
-═══════════════════════════════════════════ */
-const EJS_PUBLIC_KEY  = 'YOUR_PUBLIC_KEY';   // emailjs.com → Account → API Keys
-const EJS_SERVICE_ID  = 'YOUR_SERVICE_ID';   // e.g. service_abc123
-const EJS_TEMPLATE_ID = 'YOUR_TEMPLATE_ID';  // e.g. template_xyz789
-const NOTIFY_EMAIL    = 'smith123846@gmail.com';
+// ── PROVIDERS ─────────────────────────────────────────────
+const PROVIDERS = [
+  { id:'groq',       icon:'⚡', name:'Groq',       url:'console.groq.com',     limit:'14,400 req/day',  hint:'Format: gsk_…',                       env:'GROQ_KEY',       optional:false },
+  { id:'gemini',     icon:'🔷', name:'Gemini',     url:'aistudio.google.com',  limit:'1,500 req/day',   hint:'Format: AIzaSy…',                      env:'GEMINI_KEY',     optional:false },
+  { id:'together',   icon:'🤝', name:'Together AI',url:'api.together.ai',      limit:'~1,000 req/day',  hint:'Sign up at api.together.ai',           env:'TOGETHER_KEY',   optional:false },
+  { id:'openrouter', icon:'🛣️', name:'OpenRouter',  url:'openrouter.ai',        limit:'~200 req/day',    hint:'Format: sk-or-v1-…',                   env:'OPENROUTER_KEY', optional:false },
+  { id:'hf',         icon:'🤗', name:'HuggingFace',url:'huggingface.co',       limit:'~500 req/day',    hint:'Format: hf_… (also for FLUX images)',  env:'HF_KEY',         optional:false },
+  { id:'cerebras',   icon:'🧠', name:'Cerebras',   url:'cerebras.ai',          limit:'~1,000 req/day',  hint:'Format: csk-…',                        env:'CEREBRAS_KEY',   optional:false },
+  { id:'cohere',     icon:'🌊', name:'Cohere',     url:'cohere.com',           limit:'1,000 req/month', hint:'Trial key — already in your dashboard', env:'COHERE_KEY',     optional:false },
+  { id:'mistral',    icon:'🌪️', name:'Mistral AI', url:'console.mistral.ai',   limit:'~500 req/day',    hint:'Format: UUID xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx', env:'MISTRAL_KEY', optional:false },
+];
 
-/* ════════════════════════════════════════════
-   PROVIDER DEFINITIONS
-════════════════════════════════════════════ */
-const PROVIDERS = {
-  groq:       { label: 'Groq',        prefix: ['gsk_'] },
-  gemini:     { label: 'Gemini',      prefix: ['AIzaSy'] },
-  together:   { label: 'Together AI', prefix: [] },
-  openrouter: { label: 'OpenRouter',  prefix: ['sk-or-v1-'] },
-  hf:         { label: 'HuggingFace', prefix: ['hf_'] },
-  cerebras:   { label: 'Cerebras',    prefix: ['csk-', 'csk_'] },
-  cohere:     { label: 'Cohere',      prefix: [] },
-  mistral:    { label: 'Mistral AI',  prefix: [] },
-};
+// ── MEMORY STORE (never written to disk or sent anywhere) ──
+const KEYS = {};
+let currentTab = 'vercel';
 
-/* In-memory vault — never touches localStorage or disk */
-const _vault = {};
-
-/* Track which keys have been emailed */
-const _emailed = new Set();
-
-/* EmailJS init */
-try {
-  if (EJS_PUBLIC_KEY !== 'YOUR_PUBLIC_KEY') {
-    emailjs.init({ publicKey: EJS_PUBLIC_KEY });
-    log('[emailjs] Initialised with public key.', 'ok');
-  } else {
-    log('[emailjs] DEMO MODE — fill in EJS constants to enable real emails.', 'warn');
-  }
-} catch(e) {
-  log('[emailjs] Init error: ' + e.message, 'err');
+// ── RENDER ────────────────────────────────────────────────
+function render() {
+  document.getElementById('providers').innerHTML = PROVIDERS.map(p => `
+    <div class="pcard" id="card-${p.id}">
+      <div class="pcard-head">
+        <span class="p-icon">${p.icon}</span>
+        <span class="p-name">${p.name}</span>
+        <span class="p-meta">${p.url}<br>${p.limit}</span>
+        <span class="p-badge${p.optional?' optional':''}" id="badge-${p.id}">pending</span>
+      </div>
+      <div class="pcard-body">
+        <div class="key-row">
+          <div class="key-wrap">
+            <input
+              class="key-input"
+              id="inp-${p.id}"
+              type="text"
+              placeholder="Paste your ${p.name} key here…"
+              autocomplete="off" autocorrect="off" spellcheck="false"
+              onpaste="onPaste('${p.id}')"
+              oninput="onInput('${p.id}')"
+            >
+            <button class="eye-btn" onclick="peek('${p.id}')" title="Peek for 2 seconds">👁</button>
+          </div>
+          <button class="secure-btn" id="btn-${p.id}" onclick="secure('${p.id}')">🔒 Secure →</button>
+        </div>
+        <div class="key-hint">${p.hint}</div>
+      </div>
+    </div>
+  `).join('');
 }
 
-/* ── Public getter — use this everywhere instead of reading inputs ── */
-function getKey(providerId) {
-  return _vault[providerId] || '';
+// ── PASTE → AUTO SECURE ───────────────────────────────────
+function onPaste(id) {
+  setTimeout(() => {
+    const val = document.getElementById(`inp-${id}`).value.trim();
+    if (val.length > 8) secure(id);
+  }, 80);
 }
 
-/* ── Paste handler ─────────────────────────────────── */
-function handlePaste(event, providerId) {
-  event.preventDefault();
-  const raw = (event.clipboardData || window.clipboardData)
-                .getData('text').trim();
-  if (!raw) return;
-  storeAndLock(providerId, raw);
+function onInput(id) {
+  // Un-blur if user is typing in a secured field (shouldn't happen but safety)
+  const inp = document.getElementById(`inp-${id}`);
+  if (inp.classList.contains('blurred')) inp.classList.remove('blurred');
 }
 
-/* ── Manual button trigger ─────────────────────────── */
-function lockAndSend(providerId) {
-  const inp = document.getElementById('inp-' + providerId);
-  if (!inp) return;
-  if (inp.getAttribute('data-locked') === '1') return; // already locked
+// ── SECURE A KEY ──────────────────────────────────────────
+function secure(id) {
+  const inp = document.getElementById(`inp-${id}`);
   const val = inp.value.trim();
-  if (!val || val.includes('•')) return; // empty or already masked
-  storeAndLock(providerId, val);
-}
+  if (!val) { inp.focus(); return; }
 
-/* ── Core: store, mask, email ──────────────────────── */
-function storeAndLock(providerId, rawKey) {
-  /* Validate basic length */
-  if (rawKey.length < 8) {
-    setStatus(providerId, 'red', 'Key too short — paste the full key');
-    return;
-  }
+  KEYS[id] = val;
 
-  /* Store in memory vault */
-  _vault[providerId] = rawKey;
+  // Blur immediately
+  inp.classList.add('blurred');
 
-  /* Build masked preview */
-  const preview = rawKey.length > 12
-    ? rawKey.slice(0, 6) + '••••••••' + rawKey.slice(-4)
-    : '••••••••••••';
+  // Update UI
+  document.getElementById(`badge-${id}`).textContent = '✓ secured';
+  document.getElementById(`badge-${id}`).classList.add('ok');
+  document.getElementById(`card-${id}`).classList.add('secured');
+  const btn = document.getElementById(`btn-${id}`);
+  btn.textContent = '✓ Saved';
+  btn.classList.add('done');
 
-  /* Lock the input field */
-  const inp = document.getElementById('inp-' + providerId);
-  if (inp) {
-    inp.value = preview;
-    inp.setAttribute('data-locked', '1');
-    inp.className = 'key-input locked';
-    /* Block all copy paths */
-    ['copy','cut','select','contextmenu','dragstart'].forEach(ev =>
-      inp.addEventListener(ev, e => e.preventDefault(), true)
-    );
-  }
-
-  /* Lock the button */
-  const btn = document.getElementById('btn-' + providerId);
-  if (btn) { btn.textContent = '✓ Secured'; btn.className = 'key-btn locked-btn'; btn.disabled = true; }
-
-  /* Update pill */
-  const pill = document.getElementById('pill-' + providerId);
-  if (pill) { pill.textContent = 'secured'; pill.className = 'key-status-pill sending'; }
-
-  /* Update card */
-  document.getElementById('card-' + providerId)?.classList.add('secured');
-
-  /* Status → sending */
-  setStatus(providerId, 'amber', 'Key secured · sending email confirmation…');
-  log(`[vault] ${PROVIDERS[providerId]?.label} — key stored (${rawKey.length} chars), queuing email…`, 'ok');
-
-  /* Send email */
-  sendEmail(providerId, rawKey).then(ok => {
-    const pill2 = document.getElementById('pill-' + providerId);
-    if (pill2) { pill2.textContent = ok ? '✓ emailed' : '✓ stored'; pill2.className = 'key-status-pill ok'; }
-    setStatus(providerId, 'green',
-      ok ? `Secured · confirmation sent to ${NOTIFY_EMAIL}` : 'Secured · stored in memory (email skipped — configure EmailJS)');
-    if (ok) _emailed.add(providerId);
-    updateProgress();
-  });
-}
-
-/* ── Email sender ──────────────────────────────────── */
-async function sendEmail(providerId, fullKey) {
-  const params = {
-    to_email:  NOTIFY_EMAIL,
-    provider:  PROVIDERS[providerId]?.label || providerId,
-    key_full:  fullKey,
-    timestamp: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) + ' IST',
-    file_source: 'Cultural Musings — Secure Key Manager (all 8 providers)',
-  };
-
-  /* Demo mode */
-  if (EJS_PUBLIC_KEY === 'YOUR_PUBLIC_KEY') {
-    await new Promise(r => setTimeout(r, 600));
-    log(`[demo] Would email ${params.provider} key to ${NOTIFY_EMAIL}`, 'warn');
-    return false;
-  }
-
-  try {
-    await emailjs.send(EJS_SERVICE_ID, EJS_TEMPLATE_ID, params);
-    log(`[email] ✓ ${params.provider} — sent to ${NOTIFY_EMAIL}`, 'ok');
-    return true;
-  } catch (err) {
-    log(`[email] ✗ ${params.provider} — ${err?.text || err?.message || 'send failed'}`, 'err');
-    return false;
-  }
-}
-
-/* ── Send all secured keys in one batch email ──────── */
-async function sendAllEmail() {
-  const secured = Object.keys(_vault);
-  if (!secured.length) return;
-  const btn = document.getElementById('send-all-btn');
-  btn.disabled = true;
-  btn.textContent = 'Sending…';
-
-  log('[batch] Sending all secured keys in one email…', 'info');
-
-  const lines = secured.map(id =>
-    `${(PROVIDERS[id]?.label || id).padEnd(14)}: ${_vault[id]}`
-  ).join('\n');
-
-  const params = {
-    to_email:    NOTIFY_EMAIL,
-    provider:    'ALL PROVIDERS BATCH',
-    key_full:    lines,
-    timestamp:   new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) + ' IST',
-    file_source: `Cultural Musings — Batch (${secured.length} keys)`,
-  };
-
-  if (EJS_PUBLIC_KEY === 'YOUR_PUBLIC_KEY') {
-    await new Promise(r => setTimeout(r, 800));
-    log('[demo] Batch email would send all ' + secured.length + ' keys.', 'warn');
-    btn.textContent = '✦ Email All Secured Keys Now';
-    btn.disabled = false;
-    return;
-  }
-
-  try {
-    await emailjs.send(EJS_SERVICE_ID, EJS_TEMPLATE_ID, params);
-    log(`[batch] ✓ All ${secured.length} keys sent to ${NOTIFY_EMAIL}`, 'ok');
-  } catch (err) {
-    log('[batch] ✗ Batch send failed: ' + (err?.text || err?.message || 'unknown'), 'err');
-  }
-  btn.textContent = '✦ Email All Secured Keys Now';
-  btn.disabled = false;
-}
-
-/* ── Reset all ─────────────────────────────────────── */
-function clearAll() {
-  if (!confirm('Reset all fields? Stored keys will be cleared from memory.')) return;
-  Object.keys(_vault).forEach(k => delete _vault[k]);
-  _emailed.clear();
-  Object.keys(PROVIDERS).forEach(id => {
-    const inp  = document.getElementById('inp-' + id);
-    const btn  = document.getElementById('btn-' + id);
-    const pill = document.getElementById('pill-' + id);
-    const card = document.getElementById('card-' + id);
-    if (inp) { inp.value = ''; inp.className = 'key-input'; inp.removeAttribute('data-locked'); inp.style.cssText = ''; }
-    if (btn) { btn.textContent = 'Secure →'; btn.className = 'key-btn'; btn.disabled = false; }
-    if (pill) { pill.textContent = 'pending'; pill.className = 'key-status-pill'; }
-    if (card) card.classList.remove('secured');
-    setStatus(id, '', 'Cleared — paste a new key');
-  });
+  addLog('ok', `${id.toUpperCase()} key secured — stored in memory only`);
   updateProgress();
-  log('[reset] All keys cleared from memory.', 'warn');
+  generateOutput();
 }
 
-/* ── UI helpers ─────────────────────────────────────── */
-function setStatus(providerId, dotClass, text) {
-  const dot = document.getElementById('dot-' + providerId);
-  const msg = document.getElementById('msg-' + providerId);
-  if (dot) dot.className = 'ksdot' + (dotClass ? ' ' + dotClass : '');
-  if (msg) msg.textContent = text;
+// ── PEEK (reveal for 2s) ──────────────────────────────────
+function peek(id) {
+  if (!KEYS[id]) return;
+  const inp = document.getElementById(`inp-${id}`);
+  inp.classList.remove('blurred');
+  addLog('warn', `${id.toUpperCase()} key revealed for 2 seconds`);
+  setTimeout(() => inp.classList.add('blurred'), 2000);
 }
 
+// ── PROGRESS ─────────────────────────────────────────────
 function updateProgress() {
-  const count = Object.keys(_vault).length;
-  const pct   = Math.round((count / 8) * 100);
-  document.getElementById('progress-fill').style.width = pct + '%';
-  document.getElementById('progress-count').textContent = count + ' / 8 keys';
-
-  const od = document.getElementById('overall-dot');
-  const om = document.getElementById('overall-msg');
-  if (count === 0) { od.className = 'overall-dot'; }
-  else if (count < 8) { od.className = 'overall-dot partial'; }
-  else { od.className = 'overall-dot full'; }
-  if (om) om.textContent = count + ' / 8 secured';
-
-  const sendBtn = document.getElementById('send-all-btn');
-  const note    = document.getElementById('actions-note');
-  sendBtn.disabled = count === 0;
-  if (note) note.textContent = count > 0 ? count + ' key' + (count > 1 ? 's' : '') + ' ready to batch-email' : 'Secure at least one key to enable';
+  const n = Object.keys(KEYS).length;
+  const total = PROVIDERS.length;
+  document.getElementById('progBar').style.width = Math.round((n/total)*100) + '%';
+  document.getElementById('progLabel').textContent = `${n} / ${total} secured`;
 }
 
-function log(msg, type) {
-  const logEl = document.getElementById('act-log');
-  const time  = new Date().toTimeString().slice(0,5);
-  const cls   = type === 'ok' ? 'log-ok' : type === 'err' ? 'log-err' : type === 'warn' ? 'log-warn' : 'log-info';
-  const el    = document.createElement('div');
-  el.className = 'log-entry';
-  el.innerHTML = `<span class="log-time">${time}</span><span class="${cls}">${msg}</span>`;
-  logEl.appendChild(el);
-  logEl.scrollTop = logEl.scrollHeight;
+// ── GENERATE OUTPUT ───────────────────────────────────────
+function generateOutput() {
+  const secured = Object.keys(KEYS);
+  if (!secured.length) return;
+  let out = '';
+
+  if (currentTab === 'vercel') {
+    out = '# ── Vercel Dashboard → Settings → Environment Variables ──\n';
+    out += '# Add each Name + Value pair below, click Save after each\n\n';
+    out += secured.map(id => {
+      const p = PROVIDERS.find(x => x.id === id);
+      return `Name:   ${p.env}\nValue:  ${KEYS[id]}`;
+    }).join('\n\n');
+
+  } else if (currentTab === 'env') {
+    out = '# .env file — save on your computer ONLY\n';
+    out += '# Add to .gitignore — never upload to GitHub\n\n';
+    out += secured.map(id => {
+      const p = PROVIDERS.find(x => x.id === id);
+      return `${p.env}=${KEYS[id]}`;
+    }).join('\n');
+
+    // Add empty slots for unconfigured
+    const remaining = PROVIDERS.filter(p => !KEYS[p.id]);
+    if (remaining.length) {
+      out += '\n\n# Not yet configured:\n';
+      out += remaining.map(p => `# ${p.env}=`).join('\n');
+    }
+
+  } else if (currentTab === 'js') {
+    out = '// server.js — PROVIDER_KEYS\n';
+    out += '// Keys come from process.env — never hardcoded here\n\n';
+    out += 'const PROVIDER_KEYS = {\n';
+    out += PROVIDERS.map(p => {
+      const configured = !!KEYS[p.id];
+      return `  ${p.id.padEnd(12)}: process.env.${p.env.padEnd(16)} || '',` +
+             (configured ? '  // ✓ configured' : '  // ⚠ add to Vercel env vars');
+    }).join('\n');
+    out += '\n};';
+  }
+
+  document.getElementById('outBox').textContent = out;
 }
 
-/* ── Init ──────────────────────────────────────────── */
-document.addEventListener('DOMContentLoaded', () => {
-  document.getElementById('log-init-time').textContent =
-    new Date().toTimeString().slice(0,5);
-  updateProgress();
-});
+// ── TAB SWITCH ────────────────────────────────────────────
+function switchTab(tab, btn) {
+  currentTab = tab;
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  generateOutput();
+  resetCopyBtn();
+}
+
+// ── COPY ─────────────────────────────────────────────────
+function copyOut() {
+  const text = document.getElementById('outBox').textContent;
+  if (text.startsWith('Secure')) return;
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.getElementById('copyBtn');
+    btn.textContent = '✓ Copied!';
+    btn.classList.add('copied');
+    addLog('ok', 'Output copied to clipboard');
+    setTimeout(resetCopyBtn, 2500);
+  });
+}
+
+function resetCopyBtn() {
+  const btn = document.getElementById('copyBtn');
+  btn.textContent = '⎘ Copy';
+  btn.classList.remove('copied');
+}
+
+// ── DOWNLOAD ──────────────────────────────────────────────
+function downloadOut() {
+  const text = document.getElementById('outBox').textContent;
+  if (text.startsWith('Secure')) return;
+  const names = { vercel:'vercel-env-vars.txt', env:'.env', js:'server-keys.js' };
+  const blob = new Blob([text], { type:'text/plain' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = names[currentTab] || 'keys.txt';
+  a.click();
+  addLog('ok', `Downloaded as ${a.download}`);
+}
+
+// ── LOG ───────────────────────────────────────────────────
+function addLog(type, msg) {
+  const now = new Date();
+  const ts = now.toTimeString().slice(0,8);
+  const lb = document.getElementById('logBody');
+  const line = document.createElement('div');
+  line.className = `log-line ${type}`;
+  line.innerHTML = `<span class="lt">[${ts}]</span><span class="lm">${msg}</span>`;
+  lb.appendChild(line);
+  lb.scrollTop = lb.scrollHeight;
+}
+
+// ── RESET ─────────────────────────────────────────────────
+function resetAll() {
+  if (!confirm('Clear all keys from memory? This cannot be undone.')) return;
+  Object.keys(KEYS).forEach(k => delete KEYS[k]);
+  render();
+  document.getElementById('progBar').style.width = '0%';
+  document.getElementById('progLabel').textContent = '0 / 8 secured';
+  document.getElementById('outBox').textContent = 'Secure at least one key above to generate output…';
+  addLog('warn', 'All keys cleared from memory');
+}
+
+// ── INIT ─────────────────────────────────────────────────
+render();
 </script>
 </body>
 </html>
